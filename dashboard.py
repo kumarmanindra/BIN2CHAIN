@@ -7,7 +7,7 @@ from datetime import datetime
 from io import BytesIO
 
 # ==========================================
-# NAGRIQ ADMIN DASHBOARD
+# Bin2Chain ADMIN DASHBOARD
 # ==========================================
 
 BASE_DIR = Path(__file__).parent
@@ -18,7 +18,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # Local development password only.
 # Change this before public deployment.
-ADMIN_PASSWORD = "NAGRIQ@2026"
+ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
 
 STATUS_OPTIONS = [
     "Submitted",
@@ -237,7 +237,7 @@ def render_dashboard(language="English"):
 
 def admin_login():
 
-    st.title("🔐 NAGRIQ Admin Login")
+    st.title("🔐 Bin2Chain Admin Login")
 
     st.caption(
         "Authorized administrators only."
@@ -285,7 +285,7 @@ def admin_login():
 
 def render_admin_dashboard():
 
-    st.title("🛡️ NAGRIQ Admin Panel")
+    st.title("🛡️ Bin2Chain Admin Panel")
 
     st.caption(
         "Manage and monitor citizen complaints."
@@ -453,7 +453,7 @@ def render_admin_dashboard():
         st.download_button(
             "⬇️ Download CSV",
             data=csv_data,
-            file_name="NAGRIQ_Complaints.csv",
+            file_name="Bin2Chain_Complaints.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -478,7 +478,7 @@ def render_admin_dashboard():
             st.download_button(
                 "⬇️ Download Excel",
                 data=excel_buffer.getvalue(),
-                file_name="NAGRIQ_Complaints.xlsx",
+                file_name="Bin2Chain_Complaints.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
@@ -824,7 +824,7 @@ def render_admin_panel():
 
     with col1:
 
-        st.title("🌱 NAGRIQ Administration")
+        st.title("🌱 Bin2Chain Administration")
 
     with col2:
 

@@ -2,11 +2,11 @@ import streamlit as st
 from reporting import render_reporting_form
 from dashboard import render_dashboard, render_admin_panel
 # ==========================================
-# NAGRIQ | DELHI CITYFIX BUILDATHON 2026
+# Bin2Chain | DELHI CITYFIX BUILDATHON 2026
 # A Better City Begins With You
 # ==========================================
 st.set_page_config(
-    page_title="NAGRIQ | Your City. Your Voice. Your Impact.",
+    page_title="Bin2Chain | Your City. Your Voice. Your Impact.",
     page_icon="🌱",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -27,8 +27,8 @@ CONTENT = {
         "problem_title": "Every neighbourhood deserves better.",
         "problem_desc": "Potholes, overflowing garbage, waterlogging and broken streetlights affect our everyday lives.",
         "solution_title": "Small actions. Meaningful change.",
-        "solution_desc": "NAGRIQ connects citizens, AI technology and community participation to turn urban challenges into meaningful civic action.",
-        "how_title": "How NAGRIQ Works",
+        "solution_desc": "Bin2Chain connects citizens, AI technology and community participation to turn urban challenges into meaningful civic action.",
+        "how_title": "How Bin2Chain Works",
         "steps": [
             ("01", "Speak Up", "Report neighbourhood problems with a photo and location."),
             ("02", "Understand", "AI helps identify and prioritize civic issues."),
@@ -48,7 +48,7 @@ CONTENT = {
         "join_button": "Be Part of the Change",
         "footer": "People. Community. Change.",
         "location": "Starting in Delhi. Growing through communities.",
-        "notice": "NAGRIQ is an independent civic technology initiative. It is not affiliated with any government authority.",
+        "notice": "Bin2Chain is an independent civic technology initiative. It is not affiliated with any government authority.",
         "report_message": "Our civic reporting module is coming soon.",
         "community_message": "Community participation is coming soon."
     },
@@ -63,8 +63,8 @@ CONTENT = {
         "problem_title": "हर मोहल्ला बेहतर सुविधाओं का हकदार है।",
         "problem_desc": "सड़कों के गड्ढे, कूड़े के ढेर, जलभराव और खराब स्ट्रीट लाइट हमारी रोजमर्रा की जिंदगी को प्रभावित करते हैं।",
         "solution_title": "छोटे कदम। बड़ा बदलाव।",
-        "solution_desc": "NAGRIQ नागरिकों, AI तकनीक और सामुदायिक भागीदारी को जोड़कर शहरी समस्याओं के समाधान की दिशा में काम करता है।",
-        "how_title": "NAGRIQ कैसे काम करता है?",
+        "solution_desc": "Bin2Chain नागरिकों, AI तकनीक और सामुदायिक भागीदारी को जोड़कर शहरी समस्याओं के समाधान की दिशा में काम करता है।",
+        "how_title": "Bin2Chain कैसे काम करता है?",
         "steps": [
             ("01", "अपनी बात रखें", "फोटो और लोकेशन के साथ मोहल्ले की समस्या बताएं।"),
             ("02", "समस्या समझें", "AI समस्याओं की पहचान और प्राथमिकता तय करने में मदद करता है।"),
@@ -84,7 +84,7 @@ CONTENT = {
         "join_button": "बदलाव का हिस्सा बनें",
         "footer": "लोग। समुदाय। बदलाव।",
         "location": "शुरुआत दिल्ली से। विस्तार हर समुदाय तक।",
-        "notice": "NAGRIQ एक स्वतंत्र नागरिक तकनीकी पहल है। इसका किसी सरकारी प्राधिकरण से संबंध नहीं है।",
+        "notice": "Bin2Chain एक स्वतंत्र नागरिक तकनीकी पहल है। इसका किसी सरकारी प्राधिकरण से संबंध नहीं है।",
         "report_message": "नागरिक रिपोर्टिंग सुविधा जल्द उपलब्ध होगी।",
         "community_message": "सामुदायिक भागीदारी जल्द शुरू होगी।"
     }
@@ -98,7 +98,7 @@ if "language" not in st.session_state:
     st.session_state.language = "English"
 
 # ==========================================
-# NAGRIQ BRAND DESIGN
+# Bin2Chain BRAND DESIGN
 # ==========================================
 
 st.markdown("""
@@ -276,7 +276,7 @@ col_brand, col_nav, col_language = st.columns([2, 4, 1.3])
 
 with col_brand:
     st.markdown(
-        '<div class="brand">🌱 NAGRIQ</div>',
+        '<div class="brand">🌱 Bin2Chain</div>',
         unsafe_allow_html=True
     )
 
@@ -385,7 +385,7 @@ st.markdown(
 )
 
 # ==========================================
-# HOW NAGRIQ WORKS
+# HOW Bin2Chain WORKS
 # ==========================================
 
 st.markdown('<div id="how-it-works"></div>', unsafe_allow_html=True)
@@ -463,11 +463,11 @@ if st.button(data["join_button"], use_container_width=True):
 
 st.markdown(f"""
 <div class="footer">
-    <h2 style="color:#123C35;font-family:Poppins">🌱 NAGRIQ</h2>
+    <h2 style="color:#123C35;font-family:Poppins">🌱 Bin2Chain</h2>
     <p>{data['footer']}</p>
     <p>{data['location']}</p>
     <hr>
     <p>{data['notice']}</p>
-    <p>© 2026 NAGRIQ | CityFix Buildathon</p>
+    <p>© 2026 Bin2Chain | CityFix Buildathon</p>
 </div>
 """, unsafe_allow_html=True)

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 # =====================================
-# NAGRIQ ADMIN ANALYTICS
+# Bin2Chain ADMIN ANALYTICS
 # =====================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -67,7 +67,7 @@ def load_reports():
 
 def render_admin_analytics():
 
-    st.title("📊 NAGRIQ Admin Analytics")
+    st.title("📊 Bin2Chain Admin Analytics")
 
     st.caption(
         "Monitor citizen complaints and "

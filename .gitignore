@@ -9,3 +9,5 @@ __pycache__/
 
 data/reports.json
 uploads/*
+.idea/
+.streamlit/

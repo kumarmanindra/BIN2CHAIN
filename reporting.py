@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 
 # ==================================================
-# NAGRIQ | CITIZEN REPORTING MODULE
+# Bin2Chain | CITIZEN REPORTING MODULE
 # Your City. Your Voice. Your Impact.
 # ==================================================
 
@@ -161,7 +161,7 @@ def render_reporting_form(language="English"):
     # ==================================================
 
     with st.form(
-        "nagriq_report_form",
+        "Bin2Chain_report_form",
         clear_on_submit=True
     ):
 
@@ -240,7 +240,7 @@ def render_reporting_form(language="English"):
 
             else:
 
-                # Generate unique NAGRIQ complaint ID
+                # Generate unique Bin2Chain complaint ID
 
                 report_id = (
                     "NAG-" +
@@ -273,7 +273,7 @@ def render_reporting_form(language="English"):
 
                 report = {
                     "report_id": report_id,
-                    "brand": "NAGRIQ",
+                    "brand": "Bin2Chain",
                     "category": category,
                     "location": location.strip(),
                     "description": description.strip(),
@@ -298,9 +298,9 @@ def render_reporting_form(language="English"):
                     )
 
                     st.info(
-                        "आपकी रिपोर्ट NAGRIQ डेटाबेस में सुरक्षित की गई है।"
+                        "आपकी रिपोर्ट Bin2Chain डेटाबेस में सुरक्षित की गई है।"
                         if hindi else
-                        "Your report has been saved in the NAGRIQ project database."
+                        "Your report has been saved in the Bin2Chain project database."
                     )
 
                     st.markdown(
@@ -313,7 +313,7 @@ def render_reporting_form(language="English"):
                             margin-top: 12px;
                         ">
                             <h3 style="color:#123C35;">
-                                🌱 NAGRIQ
+                                🌱 Bin2Chain
                             </h3>
                             <p style="color:#315B4D;">
                                 Your complaint reference number
