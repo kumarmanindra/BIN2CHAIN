@@ -16,15 +16,22 @@ REPORT_FILE = DATA_DIR / "reports.json"
 
 DATA_DIR.mkdir(exist_ok=True)
 
-# Local development password only.
-# Change this before public deployment.
 ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
 
-STATUS_OPTIONS = [
-    "Submitted",
-    "In Progress",
-    "Resolved"
+STATUS_OPTIONS = ["Submitted", "In Progress", "Resolved"]
+
+DEPARTMENTS = [
+    "Road Maintenance Department",
+    "Sanitation Department",
+    "Water Supply Department",
+    "Drainage Department",
+    "Electrical Department",
+    "Public Safety Department",
+    "General Administration"
 ]
+
+PRIORITIES = ["Low", "Medium", "High", "Critical"]
+REVIEW_OPTIONS = ["Pending Review", "Accepted", "Rejected"]
 
 
 # ==========================================
@@ -32,9 +39,7 @@ STATUS_OPTIONS = [
 # ==========================================
 
 def current_timestamp():
-    return datetime.now().astimezone().isoformat(
-        timespec="seconds"
-    )
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 # ==========================================
@@ -47,18 +52,12 @@ def load_reports():
         return []
 
     try:
-        with open(
-            REPORT_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
+        with open(REPORT_FILE, "r", encoding="utf-8") as file:
             data = json.load(file)
 
         if not isinstance(data, list):
             return []
 
-        # Ensure older reports have the new fields.
         for report in data:
 
             if not isinstance(report, dict):
@@ -69,15 +68,21 @@ def load_reports():
             report.setdefault("resolution_notes", "")
             report.setdefault("status_history", [])
 
-            if not isinstance(
-                report["status_history"], list
-            ):
+            report.setdefault("review_status", "Pending Review")
+            report.setdefault("assigned_department", "")
+            report.setdefault("assigned_officer", "")
+            report.setdefault("priority", "Medium")
+            report.setdefault("rejection_reason", "")
+            report.setdefault("assignment_remarks", "")
+            report.setdefault("assignment_history", [])
+
+            if not isinstance(report["status_history"], list):
                 report["status_history"] = []
 
-        return [
-            report for report in data
-            if isinstance(report, dict)
-        ]
+            if not isinstance(report["assignment_history"], list):
+                report["assignment_history"] = []
+
+        return [r for r in data if isinstance(r, dict)]
 
     except (json.JSONDecodeError, OSError):
         return []
@@ -94,11 +99,7 @@ def save_reports(reports):
     temp_file = REPORT_FILE.with_suffix(".tmp")
 
     temp_file.write_text(
-        json.dumps(
-            reports,
-            indent=4,
-            ensure_ascii=False
-        ),
+        json.dumps(reports, indent=4, ensure_ascii=False),
         encoding="utf-8"
     )
 
@@ -154,59 +155,30 @@ def render_dashboard(language="English"):
     reports = load_reports()
 
     if not reports:
-
         st.info(
             "अभी कोई रिपोर्ट नहीं है।"
             if hindi else
             "No reports submitted yet."
         )
-
         return
 
     df = create_reports_dataframe(reports)
 
     total = len(df)
-
-    submitted = (
-        df["status"] == "Submitted"
-    ).sum()
-
-    in_progress = (
-        df["status"] == "In Progress"
-    ).sum()
-
-    resolved = (
-        df["status"] == "Resolved"
-    ).sum()
+    submitted = (df["status"] == "Submitted").sum()
+    in_progress = (df["status"] == "In Progress").sum()
+    resolved = (df["status"] == "Resolved").sum()
 
     col1, col2, col3, col4 = st.columns(4)
 
-    col1.metric(
-        "कुल रिपोर्ट" if hindi else "Total Reports",
-        total
-    )
-
-    col2.metric(
-        "लंबित" if hindi else "Submitted",
-        int(submitted)
-    )
-
-    col3.metric(
-        "प्रगति में" if hindi else "In Progress",
-        int(in_progress)
-    )
-
-    col4.metric(
-        "हल की गई" if hindi else "Resolved",
-        int(resolved)
-    )
+    col1.metric("Total Reports", total)
+    col2.metric("Submitted", int(submitted))
+    col3.metric("In Progress", int(in_progress))
+    col4.metric("Resolved", int(resolved))
 
     st.divider()
 
-    st.subheader(
-        "📋 सभी रिपोर्ट" if hindi else
-        "📋 All Reports"
-    )
+    st.subheader("📋 All Reports")
 
     display_columns = [
         "report_id",
@@ -222,13 +194,8 @@ def render_dashboard(language="English"):
         hide_index=True
     )
 
-    if "category" in df.columns:
-
-        st.subheader("Issue Category Analysis")
-
-        st.bar_chart(
-            df["category"].value_counts()
-        )
+    st.subheader("Issue Category Analysis")
+    st.bar_chart(df["category"].value_counts())
 
 
 # ==========================================
@@ -238,21 +205,12 @@ def render_dashboard(language="English"):
 def admin_login():
 
     st.title("🔐 Bin2Chain Admin Login")
-
-    st.caption(
-        "Authorized administrators only."
-    )
+    st.caption("Authorized administrators only.")
 
     with st.form("admin_login_form"):
 
-        username = st.text_input(
-            "Admin Username"
-        )
-
-        password = st.text_input(
-            "Admin Password",
-            type="password"
-        )
+        username = st.text_input("Admin Username")
+        password = st.text_input("Admin Password", type="password")
 
         login_button = st.form_submit_button(
             "Login",
@@ -267,16 +225,308 @@ def admin_login():
             ):
 
                 st.session_state.admin_authenticated = True
-
                 st.success("Login successful!")
-
                 st.rerun()
 
             else:
+                st.error("Invalid username or password.")
 
-                st.error(
-                    "Invalid username or password."
+
+# ==========================================
+# MUNICIPAL COMPLAINT MANAGEMENT
+# ==========================================
+
+def render_department_assignment(reports):
+
+    st.divider()
+    st.header("🏛️ Municipal Complaint Management")
+
+    st.caption(
+        "Verify citizen complaints, assign municipal departments "
+        "and officers, and manage priority."
+    )
+
+    valid_reports = [
+        r for r in reports
+        if isinstance(r, dict) and r.get("report_id")
+    ]
+
+    if not valid_reports:
+        st.info("No complaints available for municipal assignment.")
+        return
+
+    report_ids = [
+        str(r["report_id"])
+        for r in valid_reports
+    ]
+
+    selected_id = st.selectbox(
+        "Select Complaint for Municipal Review",
+        report_ids,
+        key="municipal_assignment_report"
+    )
+
+    report = next(
+        (
+            r for r in valid_reports
+            if str(r.get("report_id")) == selected_id
+        ),
+        None
+    )
+
+    if report is None:
+        st.warning("Selected complaint could not be found.")
+        return
+
+    # COMPLAINT DETAILS
+
+    st.markdown("### 📄 Complaint Details")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.write("**Report ID:**", selected_id)
+        st.write("**Category:**", report.get("category", "N/A"))
+        st.write("**Location:**", report.get("location", "N/A"))
+
+    with col2:
+        st.write("**Citizen Status:**", report.get("status", "Submitted"))
+        st.write("**Created At:**", report.get("created_at", "N/A"))
+        st.write("**Priority:**", report.get("priority", "Medium"))
+
+    st.write("**Description:**", report.get("description", "N/A"))
+
+    # CITIZEN PHOTO
+
+    photo_path = report.get("photo")
+
+    if photo_path:
+
+        photo_file = Path(photo_path)
+
+        if not photo_file.is_absolute():
+            photo_file = BASE_DIR / photo_file
+
+        if photo_file.is_file():
+
+            with st.expander("View Citizen Uploaded Photo"):
+                st.image(
+                    str(photo_file),
+                    caption="Citizen Uploaded Photo",
+                    use_container_width=True
                 )
+
+    # CURRENT VALUES
+
+    current_review = report.get(
+        "review_status",
+        "Pending Review"
+    )
+
+    if current_review not in REVIEW_OPTIONS:
+        current_review = "Pending Review"
+
+    department_options = ["Not Assigned"] + DEPARTMENTS
+
+    current_department = report.get(
+        "assigned_department",
+        ""
+    )
+
+    if current_department not in department_options:
+        current_department = "Not Assigned"
+
+    current_priority = report.get("priority", "Medium")
+
+    if current_priority not in PRIORITIES:
+        current_priority = "Medium"
+
+    # ASSIGNMENT FORM
+
+    st.markdown("### 🏛️ Verification and Department Assignment")
+
+    with st.form("municipal_assignment_form"):
+
+        review_status = st.selectbox(
+            "Verification Decision",
+            REVIEW_OPTIONS,
+            index=REVIEW_OPTIONS.index(current_review)
+        )
+
+        department = st.selectbox(
+            "Assign Municipal Department",
+            department_options,
+            index=department_options.index(current_department)
+        )
+
+        officer = st.text_input(
+            "Responsible Officer Name",
+            value=report.get("assigned_officer", "")
+        )
+
+        priority = st.selectbox(
+            "Complaint Priority",
+            PRIORITIES,
+            index=PRIORITIES.index(current_priority)
+        )
+
+        rejection_reason = st.text_area(
+            "Rejection Reason (required if rejected)",
+            value=report.get("rejection_reason", "")
+        )
+
+        remarks = st.text_area(
+            "Assignment Remarks",
+            value=report.get("assignment_remarks", "")
+        )
+
+        save_assignment = st.form_submit_button(
+            "💾 Save Municipal Assignment",
+            use_container_width=True
+        )
+
+        if save_assignment:
+
+            if (
+                review_status == "Rejected"
+                and not rejection_reason.strip()
+            ):
+
+                st.error("Please enter a rejection reason.")
+
+            elif (
+                review_status == "Accepted"
+                and department == "Not Assigned"
+            ):
+
+                st.error("Please select a municipal department.")
+
+            elif (
+                review_status == "Accepted"
+                and not officer.strip()
+            ):
+
+                st.error("Please enter the responsible officer's name.")
+
+            else:
+
+                new_values = {
+                    "review_status": review_status,
+                    "assigned_department": (
+                        "" if department == "Not Assigned"
+                        else department
+                    ),
+                    "assigned_officer": officer.strip(),
+                    "priority": priority,
+                    "rejection_reason": rejection_reason.strip(),
+                    "assignment_remarks": remarks.strip()
+                }
+
+                changed = any(
+                    report.get(key, "") != value
+                    for key, value in new_values.items()
+                )
+
+                if not changed:
+
+                    st.info("No municipal assignment changes detected.")
+
+                else:
+
+                    report.update(new_values)
+
+                    history = report.get(
+                        "assignment_history",
+                        []
+                    )
+
+                    if not isinstance(history, list):
+                        history = []
+
+                    history.append({
+                        "timestamp": current_timestamp(),
+                        **new_values
+                    })
+
+                    report["assignment_history"] = history
+
+                    save_reports(reports)
+
+                    st.success(
+                        f"Municipal assignment saved for {selected_id}."
+                    )
+
+                    st.rerun()
+
+    # ASSIGNMENT SUMMARY
+
+    st.divider()
+    st.subheader("📋 Current Assignment Summary")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric(
+        "Verification",
+        report.get("review_status", "Pending Review")
+    )
+
+    col2.metric(
+        "Priority",
+        report.get("priority", "Medium")
+    )
+
+    col3.metric(
+        "Department",
+        report.get("assigned_department") or "Not Assigned"
+    )
+
+    col4.metric(
+        "Officer",
+        report.get("assigned_officer") or "Not Assigned"
+    )
+
+    if report.get("review_status") == "Rejected":
+
+        st.warning(
+            "Rejection Reason: "
+            + (report.get("rejection_reason") or "Not recorded")
+        )
+
+    # ASSIGNMENT HISTORY
+
+    st.subheader("🕒 Municipal Assignment History")
+
+    assignment_history = report.get(
+        "assignment_history",
+        []
+    )
+
+    if assignment_history:
+
+        history_df = pd.DataFrame(assignment_history)
+
+        history_columns = [
+            col for col in [
+                "timestamp",
+                "review_status",
+                "assigned_department",
+                "assigned_officer",
+                "priority",
+                "rejection_reason",
+                "assignment_remarks"
+            ]
+            if col in history_df.columns
+        ]
+
+        st.dataframe(
+            history_df[history_columns],
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+
+        st.info("No municipal assignment history recorded yet.")
 
 
 # ==========================================
@@ -294,50 +544,30 @@ def render_admin_dashboard():
     reports = load_reports()
 
     if not reports:
-
-        st.info(
-            "No citizen complaints available."
-        )
-
+        st.info("No citizen complaints available.")
         return
 
     df = create_reports_dataframe(reports)
 
-    # ======================================
-    # COMPLAINT OVERVIEW
-    # ======================================
-
     total = len(df)
+    submitted = (df["status"] == "Submitted").sum()
+    in_progress = (df["status"] == "In Progress").sum()
+    resolved = (df["status"] == "Resolved").sum()
 
-    submitted = (
-        df["status"] == "Submitted"
-    ).sum()
-
-    in_progress = (
-        df["status"] == "In Progress"
-    ).sum()
-
-    resolved = (
-        df["status"] == "Resolved"
-    ).sum()
+    # OVERVIEW
 
     st.subheader("📊 Complaint Overview")
 
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Total Reports", total)
-
     col2.metric("Submitted", int(submitted))
-
     col3.metric("In Progress", int(in_progress))
-
     col4.metric("Resolved", int(resolved))
 
     st.divider()
 
-    # ======================================
     # SEARCH AND FILTER
-    # ======================================
 
     st.subheader("🔎 Search and Filter Reports")
 
@@ -356,14 +586,12 @@ def render_admin_dashboard():
     col1, col2 = st.columns(2)
 
     with col1:
-
         selected_category = st.selectbox(
             "Filter by Category",
             category_options
         )
 
     with col2:
-
         selected_status = st.selectbox(
             "Filter by Status",
             status_options
@@ -411,9 +639,7 @@ def render_admin_dashboard():
         f"Showing {len(filtered_df)} of {total} reports"
     )
 
-    # ======================================
-    # ALL CITIZEN COMPLAINTS
-    # ======================================
+    # ALL COMPLAINTS
 
     st.subheader("📋 All Citizen Complaints")
 
@@ -432,12 +658,13 @@ def render_admin_dashboard():
         hide_index=True
     )
 
+    # MUNICIPAL MODULE
+
+    render_department_assignment(reports)
+
+    # EXPORT
+
     st.divider()
-
-    # ======================================
-    # EXPORT REPORTS
-    # ======================================
-
     st.subheader("📥 Download Reports")
 
     export_df = filtered_df.copy()
@@ -492,9 +719,7 @@ def render_admin_dashboard():
 
     st.divider()
 
-    # ======================================
     # MANAGE COMPLAINT STATUS
-    # ======================================
 
     st.subheader("✏️ Manage Complaint Status")
 
@@ -505,9 +730,7 @@ def render_admin_dashboard():
     ]
 
     if not report_ids:
-
         st.warning("No valid Report IDs found.")
-
         return
 
     selected_report_id = st.selectbox(
@@ -519,8 +742,7 @@ def render_admin_dashboard():
     selected_report = next(
         (
             report for report in reports
-            if str(report.get("report_id"))
-            == selected_report_id
+            if str(report.get("report_id")) == selected_report_id
         ),
         None
     )
@@ -528,40 +750,17 @@ def render_admin_dashboard():
     if selected_report is None:
         return
 
-    # ======================================
     # COMPLAINT DETAILS
-    # ======================================
 
     st.markdown("### 📄 Complaint Details")
 
-    st.write(
-        "**Category:**",
-        selected_report.get("category", "N/A")
-    )
+    st.write("**Category:**", selected_report.get("category", "N/A"))
+    st.write("**Location:**", selected_report.get("location", "N/A"))
+    st.write("**Description:**", selected_report.get("description", "N/A"))
+    st.write("**Current Status:**", selected_report.get("status", "Submitted"))
+    st.write("**Created At:**", selected_report.get("created_at", "N/A"))
 
-    st.write(
-        "**Location:**",
-        selected_report.get("location", "N/A")
-    )
-
-    st.write(
-        "**Description:**",
-        selected_report.get("description", "N/A")
-    )
-
-    st.write(
-        "**Current Status:**",
-        selected_report.get("status", "Submitted")
-    )
-
-    st.write(
-        "**Created At:**",
-        selected_report.get("created_at", "N/A")
-    )
-
-    # ======================================
-    # CITIZEN UPLOADED PHOTO
-    # ======================================
+    # PHOTO
 
     photo_path = selected_report.get("photo")
 
@@ -580,25 +779,20 @@ def render_admin_dashboard():
                 use_container_width=True
             )
 
+    # UPDATE STATUS
+
     st.divider()
-
-    # ======================================
-    # UPDATE STATUS AND ADMIN REMARKS
-    # ======================================
-
     st.markdown("### 📝 Update Complaint")
 
     current_status = selected_report.get(
-        "status", "Submitted"
+        "status",
+        "Submitted"
     )
 
     if current_status not in STATUS_OPTIONS:
         current_status = "Submitted"
 
-    with st.form(
-        "update_status_form",
-        clear_on_submit=False
-    ):
+    with st.form("update_status_form"):
 
         new_status = st.selectbox(
             "Update Complaint Status",
@@ -608,17 +802,13 @@ def render_admin_dashboard():
 
         admin_remarks = st.text_area(
             "Admin Remarks",
-            value=selected_report.get(
-                "admin_remarks", ""
-            ),
+            value=selected_report.get("admin_remarks", ""),
             placeholder="Enter an update for this complaint..."
         )
 
         resolution_notes = st.text_area(
             "Resolution Notes",
-            value=selected_report.get(
-                "resolution_notes", ""
-            ),
+            value=selected_report.get("resolution_notes", ""),
             placeholder="Describe the action taken to resolve the issue..."
         )
 
@@ -629,17 +819,9 @@ def render_admin_dashboard():
 
         if update_button:
 
-            old_status = selected_report.get(
-                "status", "Submitted"
-            )
-
-            old_remarks = selected_report.get(
-                "admin_remarks", ""
-            )
-
-            old_resolution = selected_report.get(
-                "resolution_notes", ""
-            )
+            old_status = selected_report.get("status", "Submitted")
+            old_remarks = selected_report.get("admin_remarks", "")
+            old_resolution = selected_report.get("resolution_notes", "")
 
             if (
                 new_status == "Resolved"
@@ -669,16 +851,12 @@ def render_admin_dashboard():
 
                     selected_report["status"] = new_status
 
-                    selected_report["admin_remarks"] = (
-                        admin_remarks.strip()
-                    )
-
-                    selected_report["resolution_notes"] = (
-                        resolution_notes.strip()
-                    )
+                    selected_report["admin_remarks"] = admin_remarks.strip()
+                    selected_report["resolution_notes"] = resolution_notes.strip()
 
                     history = selected_report.get(
-                        "status_history", []
+                        "status_history",
+                        []
                     )
 
                     if not isinstance(history, list):
@@ -703,20 +881,16 @@ def render_admin_dashboard():
 
                 else:
 
-                    st.info(
-                        "No changes detected."
-                    )
+                    st.info("No changes detected.")
+
+    # COMPLAINT HISTORY
 
     st.divider()
-
-    # ======================================
-    # COMPLAINT HISTORY
-    # ======================================
-
     st.subheader("🕒 Complaint History")
 
     history = selected_report.get(
-        "status_history", []
+        "status_history",
+        []
     )
 
     if history:
@@ -746,23 +920,17 @@ def render_admin_dashboard():
             "History will be recorded after the first admin update."
         )
 
-    st.divider()
-
-    # ======================================
     # CATEGORY ANALYSIS
-    # ======================================
 
+    st.divider()
     st.subheader("📈 Complaint Category Analysis")
 
     category_counts = df["category"].value_counts()
 
     if not category_counts.empty:
-
         st.bar_chart(category_counts)
 
-    # ======================================
     # STATUS ANALYSIS
-    # ======================================
 
     st.subheader("📊 Status Analysis")
 
@@ -774,12 +942,9 @@ def render_admin_dashboard():
 
     st.bar_chart(status_counts)
 
-    # ======================================
     # ADMIN SUMMARY
-    # ======================================
 
     st.divider()
-
     st.subheader("📌 Admin Summary")
 
     col1, col2 = st.columns(2)
@@ -813,28 +978,23 @@ def render_admin_dashboard():
 def render_admin_panel():
 
     if not st.session_state.get(
-        "admin_authenticated", False
+        "admin_authenticated",
+        False
     ):
 
         admin_login()
-
         return
 
     col1, col2 = st.columns([4, 1])
 
     with col1:
-
         st.title("🌱 Bin2Chain Administration")
 
     with col2:
 
-        if st.button(
-            "Logout",
-            use_container_width=True
-        ):
+        if st.button("Logout", use_container_width=True):
 
             st.session_state.admin_authenticated = False
-
             st.rerun()
 
     st.divider()
