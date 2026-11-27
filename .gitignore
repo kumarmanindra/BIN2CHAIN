@@ -7,7 +7,7 @@ __pycache__/
 .env
 .streamlit/secrets.toml
 
-data/reports.json
+
 uploads/*
 .idea/
 .streamlit/
