@@ -1,21 +1,16 @@
-
 import streamlit as st
-import json
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 
-# ==========================================
-# Bin2Chain ADMIN DASHBOARD
-# ==========================================
+from db import get_connection, fetch_all
+
+# =====================================================
+# BIN2CHAIN - MYSQL ADMIN AND CITIZEN DASHBOARD
+# =====================================================
 
 BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
-REPORT_FILE = DATA_DIR / "reports.json"
-
-DATA_DIR.mkdir(exist_ok=True)
-
 ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
 
 STATUS_OPTIONS = ["Submitted", "In Progress", "Resolved"]
@@ -31,84 +26,94 @@ DEPARTMENTS = [
 ]
 
 PRIORITIES = ["Low", "Medium", "High", "Critical"]
-REVIEW_OPTIONS = ["Pending Review", "Accepted", "Rejected"]
 
+REVIEW_OPTIONS = [
+    "Pending Review",
+    "Accepted",
+    "Rejected"
+]
 
-# ==========================================
-# DATE AND TIME
-# ==========================================
 
 def current_timestamp():
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+    return datetime.now().replace(tzinfo=None)
 
 
-# ==========================================
-# LOAD REPORTS
-# ==========================================
+# =====================================================
+# LOAD COMPLAINTS FROM MYSQL
+# =====================================================
 
 def load_reports():
 
-    if not REPORT_FILE.exists():
-        return []
+    reports = fetch_all("""
+        SELECT
+            report_id,
+            brand,
+            category,
+            location,
+            description,
+            photo,
+            status,
+            created_at,
+            admin_remarks,
+            resolution_notes,
+            review_status,
+            assigned_department,
+            assigned_officer,
+            priority,
+            rejection_reason,
+            assignment_remarks,
+            latitude,
+            longitude,
+            gps_accuracy,
+            gps_source
+        FROM complaints
+        ORDER BY created_at DESC
+    """)
 
-    try:
-        with open(REPORT_FILE, "r", encoding="utf-8") as file:
-            data = json.load(file)
+    for report in reports:
 
-        if not isinstance(data, list):
-            return []
+        report["status_history"] = fetch_all("""
+            SELECT
+                status,
+                remarks,
+                changed_at AS timestamp,
+                changed_by
+            FROM complaint_status_history
+            WHERE report_id = %s
+            ORDER BY changed_at ASC, id ASC
+        """, (report["report_id"],))
 
-        for report in data:
+        report["assignment_history"] = fetch_all("""
+            SELECT
+                ca.officer_name AS assigned_officer,
+                ca.priority,
+                ca.remarks AS assignment_remarks,
+                ca.assigned_at AS timestamp,
+                ca.assignment_status AS review_status,
+                d.department_name AS assigned_department
+            FROM complaint_assignments ca
+            LEFT JOIN departments d
+                ON ca.department_id = d.department_id
+            WHERE ca.report_id = %s
+            ORDER BY ca.assigned_at ASC, ca.assignment_id ASC
+        """, (report["report_id"],))
 
-            if not isinstance(report, dict):
-                continue
+        report.setdefault("status", "Submitted")
+        report.setdefault("admin_remarks", "")
+        report.setdefault("resolution_notes", "")
+        report.setdefault("review_status", "Pending Review")
+        report.setdefault("assigned_department", "")
+        report.setdefault("assigned_officer", "")
+        report.setdefault("priority", "Medium")
+        report.setdefault("rejection_reason", "")
+        report.setdefault("assignment_remarks", "")
 
-            report.setdefault("status", "Submitted")
-            report.setdefault("admin_remarks", "")
-            report.setdefault("resolution_notes", "")
-            report.setdefault("status_history", [])
-
-            report.setdefault("review_status", "Pending Review")
-            report.setdefault("assigned_department", "")
-            report.setdefault("assigned_officer", "")
-            report.setdefault("priority", "Medium")
-            report.setdefault("rejection_reason", "")
-            report.setdefault("assignment_remarks", "")
-            report.setdefault("assignment_history", [])
-
-            if not isinstance(report["status_history"], list):
-                report["status_history"] = []
-
-            if not isinstance(report["assignment_history"], list):
-                report["assignment_history"] = []
-
-        return [r for r in data if isinstance(r, dict)]
-
-    except (json.JSONDecodeError, OSError):
-        return []
-
-
-# ==========================================
-# SAVE REPORTS
-# ==========================================
-
-def save_reports(reports):
-
-    DATA_DIR.mkdir(exist_ok=True)
-
-    temp_file = REPORT_FILE.with_suffix(".tmp")
-
-    temp_file.write_text(
-        json.dumps(reports, indent=4, ensure_ascii=False),
-        encoding="utf-8"
-    )
-
-    temp_file.replace(REPORT_FILE)
+    return reports
 
 
-# ==========================================
-# DATAFRAME HELPER
-# ==========================================
+# =====================================================
+# DATAFRAME
+# =====================================================
 
 def create_reports_dataframe(reports):
 
@@ -128,19 +133,39 @@ def create_reports_dataframe(reports):
         "resolution_notes": ""
     }
 
-    for column, default_value in defaults.items():
+    for column, value in defaults.items():
 
         if column not in df.columns:
-            df[column] = default_value
+            df[column] = value
 
-        df[column] = df[column].fillna(default_value)
+        df[column] = df[column].fillna(value)
 
     return df
 
 
-# ==========================================
+# =====================================================
+# PHOTO HELPER
+# =====================================================
+
+def get_photo(photo_path):
+
+    if not photo_path:
+        return None
+
+    path = Path(photo_path)
+
+    if not path.is_absolute():
+        path = BASE_DIR / path
+
+    if path.is_file():
+        return path
+
+    return None
+
+
+# =====================================================
 # CITIZEN DASHBOARD
-# ==========================================
+# =====================================================
 
 def render_dashboard(language="English"):
 
@@ -165,99 +190,317 @@ def render_dashboard(language="English"):
     df = create_reports_dataframe(reports)
 
     total = len(df)
-    submitted = (df["status"] == "Submitted").sum()
-    in_progress = (df["status"] == "In Progress").sum()
-    resolved = (df["status"] == "Resolved").sum()
+
+    submitted = int(
+        (df["status"] == "Submitted").sum()
+    )
+
+    in_progress = int(
+        (df["status"] == "In Progress").sum()
+    )
+
+    resolved = int(
+        (df["status"] == "Resolved").sum()
+    )
 
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Total Reports", total)
-    col2.metric("Submitted", int(submitted))
-    col3.metric("In Progress", int(in_progress))
-    col4.metric("Resolved", int(resolved))
+    col2.metric("Submitted", submitted)
+    col3.metric("In Progress", in_progress)
+    col4.metric("Resolved", resolved)
 
     st.divider()
 
     st.subheader("📋 All Reports")
 
-    display_columns = [
-        "report_id",
-        "category",
-        "location",
-        "status",
-        "created_at"
-    ]
-
     st.dataframe(
-        df[display_columns],
+        df[
+            [
+                "report_id",
+                "category",
+                "location",
+                "status",
+                "created_at"
+            ]
+        ],
         use_container_width=True,
         hide_index=True
     )
 
     st.subheader("Issue Category Analysis")
+
     st.bar_chart(df["category"].value_counts())
 
 
-# ==========================================
+# =====================================================
 # ADMIN LOGIN
-# ==========================================
+# =====================================================
 
 def admin_login():
 
     st.title("🔐 Bin2Chain Admin Login")
+
     st.caption("Authorized administrators only.")
 
     with st.form("admin_login_form"):
 
         username = st.text_input("Admin Username")
-        password = st.text_input("Admin Password", type="password")
+
+        password = st.text_input(
+            "Admin Password",
+            type="password"
+        )
 
         login_button = st.form_submit_button(
             "Login",
             use_container_width=True
         )
 
-        if login_button:
+    if login_button:
 
-            if (
-                username.strip().lower() == "admin"
-                and password == ADMIN_PASSWORD
-            ):
+        if (
+            username.strip().lower() == "admin"
+            and password == ADMIN_PASSWORD
+        ):
 
-                st.session_state.admin_authenticated = True
-                st.success("Login successful!")
-                st.rerun()
+            st.session_state.admin_authenticated = True
+
+            st.success("Login successful!")
+
+            st.rerun()
+
+        else:
+
+            st.error("Invalid username or password.")
+
+
+# =====================================================
+# SAVE DEPARTMENT ASSIGNMENT TO MYSQL
+# =====================================================
+
+def save_municipal_assignment(report_id, values):
+
+    connection = get_connection()
+
+    if connection is None:
+        return False, "MySQL connection failed."
+
+    cursor = None
+
+    try:
+
+        cursor = connection.cursor()
+
+        department_name = values["assigned_department"]
+
+        department_id = None
+
+        if department_name:
+
+            cursor.execute("""
+                SELECT department_id
+                FROM departments
+                WHERE department_name = %s
+            """, (department_name,))
+
+            result = cursor.fetchone()
+
+            if result:
+                department_id = result[0]
 
             else:
-                st.error("Invalid username or password.")
+
+                cursor.execute("""
+                    INSERT INTO departments
+                    (department_name)
+                    VALUES (%s)
+                """, (department_name,))
+
+                department_id = cursor.lastrowid
+
+        cursor.execute("""
+            UPDATE complaints
+            SET
+                review_status = %s,
+                assigned_department = %s,
+                assigned_officer = %s,
+                priority = %s,
+                rejection_reason = %s,
+                assignment_remarks = %s
+            WHERE report_id = %s
+        """, (
+            values["review_status"],
+            department_name or None,
+            values["assigned_officer"] or None,
+            values["priority"],
+            values["rejection_reason"] or None,
+            values["assignment_remarks"] or None,
+            report_id
+        ))
+
+        if cursor.rowcount == 0:
+
+            cursor.execute("""
+                SELECT report_id
+                FROM complaints
+                WHERE report_id = %s
+            """, (report_id,))
+
+            if cursor.fetchone() is None:
+                raise ValueError("Complaint not found.")
+
+        cursor.execute("""
+            INSERT INTO complaint_assignments (
+                report_id,
+                department_id,
+                officer_name,
+                priority,
+                remarks,
+                assigned_at,
+                assignment_status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (
+            report_id,
+            department_id,
+            values["assigned_officer"] or None,
+            values["priority"],
+            values["assignment_remarks"] or None,
+            current_timestamp(),
+            values["review_status"]
+        ))
+
+        connection.commit()
+
+        return True, None
+
+    except Exception as error:
+
+        connection.rollback()
+
+        return False, str(error)
+
+    finally:
+
+        if cursor:
+            cursor.close()
+
+        connection.close()
 
 
-# ==========================================
-# MUNICIPAL COMPLAINT MANAGEMENT
-# ==========================================
+# =====================================================
+# UPDATE COMPLAINT STATUS IN MYSQL
+# =====================================================
+
+def save_complaint_status(
+    report_id,
+    old_status,
+    new_status,
+    admin_remarks,
+    resolution_notes
+):
+
+    connection = get_connection()
+
+    if connection is None:
+        return False, "MySQL connection failed."
+
+    cursor = None
+
+    try:
+
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            UPDATE complaints
+            SET
+                status = %s,
+                admin_remarks = %s,
+                resolution_notes = %s
+            WHERE report_id = %s
+        """, (
+            new_status,
+            admin_remarks,
+            resolution_notes,
+            report_id
+        ))
+
+        if cursor.rowcount == 0:
+
+            cursor.execute("""
+                SELECT report_id
+                FROM complaints
+                WHERE report_id = %s
+            """, (report_id,))
+
+            if cursor.fetchone() is None:
+                raise ValueError("Complaint not found.")
+
+        cursor.execute("""
+            INSERT INTO complaint_status_history (
+                report_id,
+                status,
+                remarks,
+                changed_at,
+                changed_by
+            )
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            report_id,
+            new_status,
+            admin_remarks or resolution_notes or None,
+            current_timestamp(),
+            "admin"
+        ))
+
+        connection.commit()
+
+        return True, None
+
+    except Exception as error:
+
+        connection.rollback()
+
+        return False, str(error)
+
+    finally:
+
+        if cursor:
+            cursor.close()
+
+        connection.close()
+
+
+# =====================================================
+# MUNICIPAL DEPARTMENT ASSIGNMENT
+# =====================================================
 
 def render_department_assignment(reports):
 
     st.divider()
+
     st.header("🏛️ Municipal Complaint Management")
 
     st.caption(
-        "Verify citizen complaints, assign municipal departments "
+        "Verify citizen complaints, assign departments "
         "and officers, and manage priority."
     )
 
     valid_reports = [
-        r for r in reports
-        if isinstance(r, dict) and r.get("report_id")
+        report for report in reports
+        if report.get("report_id")
     ]
 
     if not valid_reports:
-        st.info("No complaints available for municipal assignment.")
+
+        st.info("No complaints available.")
+
         return
 
     report_ids = [
-        str(r["report_id"])
-        for r in valid_reports
+        str(report["report_id"])
+        for report in valid_reports
     ]
 
     selected_id = st.selectbox(
@@ -268,80 +511,85 @@ def render_department_assignment(reports):
 
     report = next(
         (
-            r for r in valid_reports
-            if str(r.get("report_id")) == selected_id
+            item for item in valid_reports
+            if str(item["report_id"]) == selected_id
         ),
         None
     )
 
     if report is None:
-        st.warning("Selected complaint could not be found.")
         return
-
-    # COMPLAINT DETAILS
 
     st.markdown("### 📄 Complaint Details")
 
     col1, col2 = st.columns(2)
 
     with col1:
+
         st.write("**Report ID:**", selected_id)
-        st.write("**Category:**", report.get("category", "N/A"))
-        st.write("**Location:**", report.get("location", "N/A"))
+
+        st.write(
+            "**Category:**",
+            report.get("category") or "N/A"
+        )
+
+        st.write(
+            "**Location:**",
+            report.get("location") or "N/A"
+        )
 
     with col2:
-        st.write("**Citizen Status:**", report.get("status", "Submitted"))
-        st.write("**Created At:**", report.get("created_at", "N/A"))
-        st.write("**Priority:**", report.get("priority", "Medium"))
 
-    st.write("**Description:**", report.get("description", "N/A"))
+        st.write(
+            "**Citizen Status:**",
+            report.get("status") or "Submitted"
+        )
 
-    # CITIZEN PHOTO
+        st.write(
+            "**Created At:**",
+            report.get("created_at") or "N/A"
+        )
 
-    photo_path = report.get("photo")
+        st.write(
+            "**Priority:**",
+            report.get("priority") or "Medium"
+        )
 
-    if photo_path:
-
-        photo_file = Path(photo_path)
-
-        if not photo_file.is_absolute():
-            photo_file = BASE_DIR / photo_file
-
-        if photo_file.is_file():
-
-            with st.expander("View Citizen Uploaded Photo"):
-                st.image(
-                    str(photo_file),
-                    caption="Citizen Uploaded Photo",
-                    use_container_width=True
-                )
-
-    # CURRENT VALUES
-
-    current_review = report.get(
-        "review_status",
-        "Pending Review"
+    st.write(
+        "**Description:**",
+        report.get("description") or "N/A"
     )
+
+    photo_file = get_photo(report.get("photo"))
+
+    if photo_file:
+
+        with st.expander("View Citizen Uploaded Photo"):
+
+            st.image(
+                str(photo_file),
+                caption="Citizen Uploaded Photo",
+                use_container_width=True
+            )
+
+    current_review = report.get("review_status") or "Pending Review"
 
     if current_review not in REVIEW_OPTIONS:
         current_review = "Pending Review"
 
     department_options = ["Not Assigned"] + DEPARTMENTS
 
-    current_department = report.get(
-        "assigned_department",
-        ""
+    current_department = (
+        report.get("assigned_department") or "Not Assigned"
     )
 
     if current_department not in department_options:
-        current_department = "Not Assigned"
+        department_options.append(current_department)
 
-    current_priority = report.get("priority", "Medium")
+    current_priority = report.get("priority") or "Medium"
 
     if current_priority not in PRIORITIES:
         current_priority = "Medium"
-
-    # ASSIGNMENT FORM
 
     st.markdown("### 🏛️ Verification and Department Assignment")
 
@@ -361,7 +609,7 @@ def render_department_assignment(reports):
 
         officer = st.text_input(
             "Responsible Officer Name",
-            value=report.get("assigned_officer", "")
+            value=report.get("assigned_officer") or ""
         )
 
         priority = st.selectbox(
@@ -371,13 +619,13 @@ def render_department_assignment(reports):
         )
 
         rejection_reason = st.text_area(
-            "Rejection Reason (required if rejected)",
-            value=report.get("rejection_reason", "")
+            "Rejection Reason",
+            value=report.get("rejection_reason") or ""
         )
 
         remarks = st.text_area(
             "Assignment Remarks",
-            value=report.get("assignment_remarks", "")
+            value=report.get("assignment_remarks") or ""
         )
 
         save_assignment = st.form_submit_button(
@@ -385,72 +633,60 @@ def render_department_assignment(reports):
             use_container_width=True
         )
 
-        if save_assignment:
+    if save_assignment:
 
-            if (
-                review_status == "Rejected"
-                and not rejection_reason.strip()
-            ):
+        if (
+            review_status == "Rejected"
+            and not rejection_reason.strip()
+        ):
 
-                st.error("Please enter a rejection reason.")
+            st.error("Please enter a rejection reason.")
 
-            elif (
-                review_status == "Accepted"
-                and department == "Not Assigned"
-            ):
+        elif (
+            review_status == "Accepted"
+            and department == "Not Assigned"
+        ):
 
-                st.error("Please select a municipal department.")
+            st.error("Please select a municipal department.")
 
-            elif (
-                review_status == "Accepted"
-                and not officer.strip()
-            ):
+        elif (
+            review_status == "Accepted"
+            and not officer.strip()
+        ):
 
-                st.error("Please enter the responsible officer's name.")
+            st.error("Please enter the responsible officer's name.")
+
+        else:
+
+            values = {
+                "review_status": review_status,
+                "assigned_department": (
+                    "" if department == "Not Assigned"
+                    else department
+                ),
+                "assigned_officer": officer.strip(),
+                "priority": priority,
+                "rejection_reason": rejection_reason.strip(),
+                "assignment_remarks": remarks.strip()
+            }
+
+            changed = any(
+                (report.get(key) or "") != value
+                for key, value in values.items()
+            )
+
+            if not changed:
+
+                st.info("No assignment changes detected.")
 
             else:
 
-                new_values = {
-                    "review_status": review_status,
-                    "assigned_department": (
-                        "" if department == "Not Assigned"
-                        else department
-                    ),
-                    "assigned_officer": officer.strip(),
-                    "priority": priority,
-                    "rejection_reason": rejection_reason.strip(),
-                    "assignment_remarks": remarks.strip()
-                }
-
-                changed = any(
-                    report.get(key, "") != value
-                    for key, value in new_values.items()
+                success, error = save_municipal_assignment(
+                    selected_id,
+                    values
                 )
 
-                if not changed:
-
-                    st.info("No municipal assignment changes detected.")
-
-                else:
-
-                    report.update(new_values)
-
-                    history = report.get(
-                        "assignment_history",
-                        []
-                    )
-
-                    if not isinstance(history, list):
-                        history = []
-
-                    history.append({
-                        "timestamp": current_timestamp(),
-                        **new_values
-                    })
-
-                    report["assignment_history"] = history
-
-                    save_reports(reports)
+                if success:
 
                     st.success(
                         f"Municipal assignment saved for {selected_id}."
@@ -458,29 +694,34 @@ def render_department_assignment(reports):
 
                     st.rerun()
 
-    # ASSIGNMENT SUMMARY
+                else:
+
+                    st.error(
+                        f"Unable to save assignment: {error}"
+                    )
 
     st.divider()
+
     st.subheader("📋 Current Assignment Summary")
 
-    col1, col2, col3, col4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
 
-    col1.metric(
+    c1.metric(
         "Verification",
-        report.get("review_status", "Pending Review")
+        report.get("review_status") or "Pending Review"
     )
 
-    col2.metric(
+    c2.metric(
         "Priority",
-        report.get("priority", "Medium")
+        report.get("priority") or "Medium"
     )
 
-    col3.metric(
+    c3.metric(
         "Department",
         report.get("assigned_department") or "Not Assigned"
     )
 
-    col4.metric(
+    c4.metric(
         "Officer",
         report.get("assigned_officer") or "Not Assigned"
     )
@@ -492,67 +733,70 @@ def render_department_assignment(reports):
             + (report.get("rejection_reason") or "Not recorded")
         )
 
-    # ASSIGNMENT HISTORY
-
     st.subheader("🕒 Municipal Assignment History")
 
-    assignment_history = report.get(
-        "assignment_history",
-        []
-    )
+    history = report.get("assignment_history", [])
 
-    if assignment_history:
+    if history:
 
-        history_df = pd.DataFrame(assignment_history)
+        history_df = pd.DataFrame(history)
 
-        history_columns = [
+        columns = [
             col for col in [
                 "timestamp",
                 "review_status",
                 "assigned_department",
                 "assigned_officer",
                 "priority",
-                "rejection_reason",
                 "assignment_remarks"
             ]
             if col in history_df.columns
         ]
 
         st.dataframe(
-            history_df[history_columns],
+            history_df[columns],
             use_container_width=True,
             hide_index=True
         )
 
     else:
 
-        st.info("No municipal assignment history recorded yet.")
+        st.info("No assignment history recorded yet.")
 
 
-# ==========================================
+# =====================================================
 # ADMIN DASHBOARD
-# ==========================================
+# =====================================================
 
 def render_admin_dashboard():
 
     st.title("🛡️ Bin2Chain Admin Panel")
 
-    st.caption(
-        "Manage and monitor citizen complaints."
-    )
+    st.caption("Manage and monitor citizen complaints.")
 
     reports = load_reports()
 
     if not reports:
+
         st.info("No citizen complaints available.")
+
         return
 
     df = create_reports_dataframe(reports)
 
     total = len(df)
-    submitted = (df["status"] == "Submitted").sum()
-    in_progress = (df["status"] == "In Progress").sum()
-    resolved = (df["status"] == "Resolved").sum()
+
+    submitted = int(
+        (df["status"] == "Submitted").sum()
+    )
+
+    in_progress = int(
+        (df["status"] == "In Progress").sum()
+    )
+
+    resolved = int(
+        (df["status"] == "Resolved").sum()
+    )
 
     # OVERVIEW
 
@@ -561,9 +805,9 @@ def render_admin_dashboard():
     col1, col2, col3, col4 = st.columns(4)
 
     col1.metric("Total Reports", total)
-    col2.metric("Submitted", int(submitted))
-    col3.metric("In Progress", int(in_progress))
-    col4.metric("Resolved", int(resolved))
+    col2.metric("Submitted", submitted)
+    col3.metric("In Progress", in_progress)
+    col4.metric("Resolved", resolved)
 
     st.divider()
 
@@ -586,12 +830,14 @@ def render_admin_dashboard():
     col1, col2 = st.columns(2)
 
     with col1:
+
         selected_category = st.selectbox(
             "Filter by Category",
             category_options
         )
 
     with col2:
+
         selected_status = st.selectbox(
             "Filter by Status",
             status_options
@@ -601,14 +847,10 @@ def render_admin_dashboard():
 
     if search_text.strip():
 
-        searchable_columns = [
-            "report_id",
-            "location",
-            "description"
-        ]
-
-        search_mask = (
-            filtered_df[searchable_columns]
+        mask = (
+            filtered_df[
+                ["report_id", "location", "description"]
+            ]
             .astype(str)
             .apply(
                 lambda column: column.str.contains(
@@ -621,7 +863,7 @@ def render_admin_dashboard():
             .any(axis=1)
         )
 
-        filtered_df = filtered_df[search_mask]
+        filtered_df = filtered_df[mask]
 
     if selected_category != "All":
 
@@ -639,21 +881,19 @@ def render_admin_dashboard():
         f"Showing {len(filtered_df)} of {total} reports"
     )
 
-    # ALL COMPLAINTS
-
     st.subheader("📋 All Citizen Complaints")
 
-    display_columns = [
-        "report_id",
-        "category",
-        "location",
-        "description",
-        "status",
-        "created_at"
-    ]
-
     st.dataframe(
-        filtered_df[display_columns],
+        filtered_df[
+            [
+                "report_id",
+                "category",
+                "location",
+                "description",
+                "status",
+                "created_at"
+            ]
+        ],
         use_container_width=True,
         hide_index=True
     )
@@ -665,6 +905,7 @@ def render_admin_dashboard():
     # EXPORT
 
     st.divider()
+
     st.subheader("📥 Download Reports")
 
     export_df = filtered_df.copy()
@@ -714,26 +955,28 @@ def render_admin_dashboard():
 
             st.warning(
                 "Excel export requires openpyxl. "
-                "Install it using: pip install openpyxl"
+                "Install using: pip install openpyxl"
             )
 
-    st.divider()
+    # STATUS MANAGEMENT
 
-    # MANAGE COMPLAINT STATUS
+    st.divider()
 
     st.subheader("✏️ Manage Complaint Status")
 
     report_ids = [
-        str(report.get("report_id"))
+        str(report["report_id"])
         for report in reports
         if report.get("report_id")
     ]
 
     if not report_ids:
+
         st.warning("No valid Report IDs found.")
+
         return
 
-    selected_report_id = st.selectbox(
+    selected_id = st.selectbox(
         "Select Report ID",
         report_ids,
         key="selected_admin_report"
@@ -742,7 +985,7 @@ def render_admin_dashboard():
     selected_report = next(
         (
             report for report in reports
-            if str(report.get("report_id")) == selected_report_id
+            if str(report["report_id"]) == selected_id
         ),
         None
     )
@@ -750,43 +993,51 @@ def render_admin_dashboard():
     if selected_report is None:
         return
 
-    # COMPLAINT DETAILS
-
     st.markdown("### 📄 Complaint Details")
 
-    st.write("**Category:**", selected_report.get("category", "N/A"))
-    st.write("**Location:**", selected_report.get("location", "N/A"))
-    st.write("**Description:**", selected_report.get("description", "N/A"))
-    st.write("**Current Status:**", selected_report.get("status", "Submitted"))
-    st.write("**Created At:**", selected_report.get("created_at", "N/A"))
+    st.write(
+        "**Category:**",
+        selected_report.get("category") or "N/A"
+    )
 
-    # PHOTO
+    st.write(
+        "**Location:**",
+        selected_report.get("location") or "N/A"
+    )
 
-    photo_path = selected_report.get("photo")
+    st.write(
+        "**Description:**",
+        selected_report.get("description") or "N/A"
+    )
 
-    if photo_path:
+    st.write(
+        "**Current Status:**",
+        selected_report.get("status") or "Submitted"
+    )
 
-        photo_file = Path(photo_path)
+    st.write(
+        "**Created At:**",
+        selected_report.get("created_at") or "N/A"
+    )
 
-        if not photo_file.is_absolute():
-            photo_file = BASE_DIR / photo_file
+    photo_file = get_photo(selected_report.get("photo"))
 
-        if photo_file.is_file():
+    if photo_file:
 
-            st.image(
-                str(photo_file),
-                caption="Citizen Uploaded Photo",
-                use_container_width=True
-            )
+        st.image(
+            str(photo_file),
+            caption="Citizen Uploaded Photo",
+            use_container_width=True
+        )
 
     # UPDATE STATUS
 
     st.divider()
+
     st.markdown("### 📝 Update Complaint")
 
-    current_status = selected_report.get(
-        "status",
-        "Submitted"
+    current_status = (
+        selected_report.get("status") or "Submitted"
     )
 
     if current_status not in STATUS_OPTIONS:
@@ -802,13 +1053,13 @@ def render_admin_dashboard():
 
         admin_remarks = st.text_area(
             "Admin Remarks",
-            value=selected_report.get("admin_remarks", ""),
+            value=selected_report.get("admin_remarks") or "",
             placeholder="Enter an update for this complaint..."
         )
 
         resolution_notes = st.text_area(
             "Resolution Notes",
-            value=selected_report.get("resolution_notes", ""),
+            value=selected_report.get("resolution_notes") or "",
             placeholder="Describe the action taken to resolve the issue..."
         )
 
@@ -817,98 +1068,90 @@ def render_admin_dashboard():
             use_container_width=True
         )
 
-        if update_button:
+    if update_button:
 
-            old_status = selected_report.get("status", "Submitted")
-            old_remarks = selected_report.get("admin_remarks", "")
-            old_resolution = selected_report.get("resolution_notes", "")
+        if (
+            new_status == "Resolved"
+            and not resolution_notes.strip()
+        ):
 
-            if (
-                new_status == "Resolved"
-                and not resolution_notes.strip()
-            ):
+            st.error(
+                "Please enter Resolution Notes before marking "
+                "a complaint as Resolved."
+            )
 
-                st.error(
-                    "Please enter Resolution Notes before marking a complaint as Resolved."
-                )
+        else:
+
+            old_status = (
+                selected_report.get("status") or "Submitted"
+            )
+
+            old_remarks = (
+                selected_report.get("admin_remarks") or ""
+            )
+
+            old_resolution = (
+                selected_report.get("resolution_notes") or ""
+            )
+
+            changed = (
+                old_status != new_status
+                or old_remarks != admin_remarks.strip()
+                or old_resolution != resolution_notes.strip()
+            )
+
+            if not changed:
+
+                st.info("No changes detected.")
 
             else:
 
-                changes = []
+                success, error = save_complaint_status(
+                    selected_id,
+                    old_status,
+                    new_status,
+                    admin_remarks.strip(),
+                    resolution_notes.strip()
+                )
 
-                if old_status != new_status:
-                    changes.append(
-                        f"Status changed from {old_status} to {new_status}"
-                    )
-
-                if old_remarks != admin_remarks:
-                    changes.append("Admin remarks updated")
-
-                if old_resolution != resolution_notes:
-                    changes.append("Resolution notes updated")
-
-                if changes:
-
-                    selected_report["status"] = new_status
-
-                    selected_report["admin_remarks"] = admin_remarks.strip()
-                    selected_report["resolution_notes"] = resolution_notes.strip()
-
-                    history = selected_report.get(
-                        "status_history",
-                        []
-                    )
-
-                    if not isinstance(history, list):
-                        history = []
-
-                    history.append({
-                        "timestamp": current_timestamp(),
-                        "status": new_status,
-                        "remarks": admin_remarks.strip(),
-                        "changes": changes
-                    })
-
-                    selected_report["status_history"] = history
-
-                    save_reports(reports)
+                if success:
 
                     st.success(
-                        f"Report {selected_report_id} updated successfully!"
+                        f"Report {selected_id} updated successfully!"
                     )
 
                     st.rerun()
 
                 else:
 
-                    st.info("No changes detected.")
+                    st.error(
+                        f"Unable to update complaint: {error}"
+                    )
 
-    # COMPLAINT HISTORY
+    # STATUS HISTORY
 
     st.divider()
+
     st.subheader("🕒 Complaint History")
 
-    history = selected_report.get(
-        "status_history",
-        []
-    )
+    history = selected_report.get("status_history", [])
 
     if history:
 
         history_df = pd.DataFrame(history)
 
-        history_columns = [
+        columns = [
             col for col in [
                 "timestamp",
                 "status",
                 "remarks",
-                "changes"
+                "changed_by"
             ]
             if col in history_df.columns
         ]
 
         st.dataframe(
-            history_df[history_columns],
+            history_df[columns],
             use_container_width=True,
             hide_index=True
         )
@@ -923,6 +1166,7 @@ def render_admin_dashboard():
     # CATEGORY ANALYSIS
 
     st.divider()
+
     st.subheader("📈 Complaint Category Analysis")
 
     category_counts = df["category"].value_counts()
@@ -945,6 +1189,7 @@ def render_admin_dashboard():
     # ADMIN SUMMARY
 
     st.divider()
+
     st.subheader("📌 Admin Summary")
 
     col1, col2 = st.columns(2)
@@ -963,17 +1208,15 @@ def render_admin_dashboard():
 
     with col2:
 
-        pending_reports = submitted + in_progress
-
         st.metric(
             "Open Complaints",
-            int(pending_reports)
+            submitted + in_progress
         )
 
 
-# ==========================================
+# =====================================================
 # ADMIN PANEL ENTRY POINT
-# ==========================================
+# =====================================================
 
 def render_admin_panel():
 
@@ -983,6 +1226,7 @@ def render_admin_panel():
     ):
 
         admin_login()
+
         return
 
     col1, col2 = st.columns([4, 1])
@@ -995,6 +1239,7 @@ def render_admin_panel():
         if st.button("Logout", use_container_width=True):
 
             st.session_state.admin_authenticated = False
+
             st.rerun()
 
     st.divider()

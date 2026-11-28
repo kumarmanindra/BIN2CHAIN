@@ -1,51 +1,62 @@
 
 import streamlit as st
-import json
 import uuid
 from pathlib import Path
 from datetime import datetime
 from gps_location import render_gps_location
+from db import execute_query
 
 # ==================================================
 # Bin2Chain | CITIZEN REPORTING MODULE
+# MySQL Database Integration
 # ==================================================
 
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "uploads"
-DATA_DIR = BASE_DIR / "data"
-REPORT_FILE = DATA_DIR / "reports.json"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ==================================================
-# SAVE REPORT
+# SAVE REPORT TO MYSQL
 # ==================================================
 
 def save_report(report):
-    reports = []
 
-    if REPORT_FILE.exists():
-        try:
-            reports = json.loads(
-                REPORT_FILE.read_text(encoding="utf-8")
-            )
-            if not isinstance(reports, list):
-                reports = []
-        except (json.JSONDecodeError, OSError):
-            reports = []
+    query = """
+        INSERT INTO complaints (
+            report_id,
+            brand,
+            category,
+            location,
+            description,
+            photo,
+            status,
+            created_at,
+            latitude,
+            longitude,
+            gps_accuracy,
+            gps_source
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
 
-    reports.append(report)
-
-    REPORT_FILE.write_text(
-        json.dumps(
-            reports,
-            indent=4,
-            ensure_ascii=False
-        ),
-        encoding="utf-8"
+    params = (
+        report["report_id"],
+        report["brand"],
+        report["category"],
+        report["location"],
+        report["description"],
+        report["photo"],
+        report["status"],
+        report["created_at"],
+        report["latitude"],
+        report["longitude"],
+        report["gps_accuracy"],
+        report["gps_source"]
     )
+
+    return execute_query(query, params)
 
 
 # ==================================================
@@ -108,7 +119,7 @@ def render_reporting_form(language="English"):
         "अपने समुदाय को स्वच्छ, सुरक्षित और बेहतर बनाने में सहयोग करें।"
     )
 
-    # GPS must be outside st.form
+    # GPS must remain outside st.form
     gps_data = render_gps_location()
 
     # ==================================================
@@ -157,6 +168,7 @@ def render_reporting_form(language="English"):
         if submitted:
 
             if not location.strip():
+
                 st.error(
                     "कृपया समस्या की लोकेशन भरें।"
                     if hindi else
@@ -164,6 +176,7 @@ def render_reporting_form(language="English"):
                 )
 
             elif not description.strip():
+
                 st.error(
                     "कृपया समस्या का विवरण दें।"
                     if hindi else
@@ -171,6 +184,7 @@ def render_reporting_form(language="English"):
                 )
 
             elif photo is not None and photo.size > 10 * 1024 * 1024:
+
                 st.error(
                     "फोटो का आकार 10 MB से कम होना चाहिए।"
                     if hindi else
@@ -185,49 +199,74 @@ def render_reporting_form(language="English"):
 
                 photo_path = None
 
-                if photo is not None:
-                    extension = Path(photo.name).suffix.lower()
-                    photo_filename = f"{report_id}{extension}"
-                    photo_path = UPLOAD_DIR / photo_filename
-                    photo_path.write_bytes(photo.getvalue())
+                try:
 
-                # GPS coordinates
-                latitude = (
-                    gps_data.get("latitude")
-                    if gps_data else None
-                )
+                    # Save uploaded photo
+                    if photo is not None:
 
-                longitude = (
-                    gps_data.get("longitude")
-                    if gps_data else None
-                )
+                        extension = Path(photo.name).suffix.lower()
 
-                accuracy = (
-                    gps_data.get("accuracy")
-                    if gps_data else None
-                )
+                        photo_filename = (
+                            f"{report_id}{extension}"
+                        )
 
-                # Complaint record
-                report = {
-                    "report_id": report_id,
-                    "brand": "Bin2Chain",
-                    "category": category,
-                    "location": location.strip(),
-                    "description": description.strip(),
-                    "photo": str(photo_path) if photo_path else None,
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "gps_accuracy": accuracy,
-                    "gps_source": (
+                        saved_photo = UPLOAD_DIR / photo_filename
+
+                        saved_photo.write_bytes(
+                            photo.getvalue()
+                        )
+
+                        # Store relative path in MySQL
+                        photo_path = str(
+                            saved_photo.relative_to(BASE_DIR)
+                        )
+
+                    # GPS coordinates
+                    latitude = (
+                        gps_data.get("latitude")
+                        if gps_data else None
+                    )
+
+                    longitude = (
+                        gps_data.get("longitude")
+                        if gps_data else None
+                    )
+
+                    accuracy = (
+                        gps_data.get("accuracy")
+                        if gps_data else None
+                    )
+
+                    gps_source = (
                         gps_data.get("source")
                         if gps_data else None
-                    ),
-                    "status": "Submitted",
-                    "created_at": datetime.now().astimezone().isoformat()
-                }
+                    )
 
-                try:
-                    save_report(report)
+                    # Complaint record
+                    report = {
+                        "report_id": report_id,
+                        "brand": "Bin2Chain",
+                        "category": category,
+                        "location": location.strip(),
+                        "description": description.strip(),
+                        "photo": photo_path,
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "gps_accuracy": accuracy,
+                        "gps_source": gps_source,
+                        "status": "Submitted",
+                        "created_at": datetime.now().replace(
+                            tzinfo=None
+                        )
+                    }
+
+                    # Save directly to MySQL
+                    saved = save_report(report)
+
+                    if not saved:
+                        raise RuntimeError(
+                            "MySQL could not save the complaint."
+                        )
 
                     st.success(
                         f"आपकी रिपोर्ट सफलतापूर्वक जमा हुई! ID: {report_id}"
@@ -236,12 +275,15 @@ def render_reporting_form(language="English"):
                     )
 
                     if latitude is not None and longitude is not None:
+
                         st.success(
                             "GPS coordinates भी complaint के साथ save हो गए।"
                             if hindi else
                             "GPS coordinates have also been saved with your complaint."
                         )
+
                     else:
+
                         st.warning(
                             "इस complaint के साथ GPS location save नहीं हुई।"
                             if hindi else
@@ -270,7 +312,15 @@ def render_reporting_form(language="English"):
                         unsafe_allow_html=True
                     )
 
-                except (OSError, TypeError, ValueError) as error:
+                except Exception as error:
+
+                    # Remove photo if database save failed
+                    if photo_path:
+                        saved_photo = BASE_DIR / photo_path
+
+                        if saved_photo.exists():
+                            saved_photo.unlink()
+
                     st.error(
                         f"Unable to save your report: {error}"
                     )
