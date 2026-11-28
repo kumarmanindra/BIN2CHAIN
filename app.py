@@ -1,10 +1,12 @@
+
 import streamlit as st
 from reporting import render_reporting_form
 from dashboard import render_dashboard, render_admin_panel
+
 # ==========================================
-# Bin2Chain | DELHI CITYFIX BUILDATHON 2026
-# A Better City Begins With You
+# BIN2CHAIN - CITYFIX BUILDATHON 2026
 # ==========================================
+
 st.set_page_config(
     page_title="Bin2Chain | Your City. Your Voice. Your Impact.",
     page_icon="🌱",
@@ -49,8 +51,9 @@ CONTENT = {
         "footer": "People. Community. Change.",
         "location": "Starting in Delhi. Growing through communities.",
         "notice": "Bin2Chain is an independent civic technology initiative. It is not affiliated with any government authority.",
-        "report_message": "Our civic reporting module is coming soon.",
-        "community_message": "Community participation is coming soon."
+        "community_message": "Community participation is coming soon.",
+        "gallery_title": "Real Issues. Real Impact.",
+        "gallery_subtitle": "Together, let's build cleaner, safer and greener neighbourhoods."
     },
 
     "Hindi": {
@@ -85,8 +88,9 @@ CONTENT = {
         "footer": "लोग। समुदाय। बदलाव।",
         "location": "शुरुआत दिल्ली से। विस्तार हर समुदाय तक।",
         "notice": "Bin2Chain एक स्वतंत्र नागरिक तकनीकी पहल है। इसका किसी सरकारी प्राधिकरण से संबंध नहीं है।",
-        "report_message": "नागरिक रिपोर्टिंग सुविधा जल्द उपलब्ध होगी।",
-        "community_message": "सामुदायिक भागीदारी जल्द शुरू होगी।"
+        "community_message": "सामुदायिक भागीदारी जल्द शुरू होगी।",
+        "gallery_title": "असली समस्याएं। वास्तविक बदलाव।",
+        "gallery_subtitle": "आइए, मिलकर स्वच्छ, सुरक्षित और हरित मोहल्ले बनाएं।"
     }
 }
 
@@ -97,17 +101,34 @@ CONTENT = {
 if "language" not in st.session_state:
     st.session_state.language = "English"
 
+for key in [
+    "show_report",
+    "show_explore",
+    "show_dashboard",
+    "show_admin_panel"
+]:
+    if key not in st.session_state:
+        st.session_state[key] = False
+
 # ==========================================
-# Bin2Chain BRAND DESIGN
+# DESIGN CSS
 # ==========================================
 
 st.markdown("""
 <style>
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700;800&display=swap');
 
 html {
     scroll-behavior: smooth;
+    scroll-padding-top: 24px;
+}
+
+header[data-testid="stHeader"] {
+    display: none !important;
+}
+
+div[data-testid="stToolbar"] {
+    display: none !important;
 }
 
 .stApp {
@@ -116,9 +137,10 @@ html {
     font-family: 'Inter', sans-serif;
 }
 
+.stAppViewContainer .main .block-container,
 .block-container {
     max-width: 1200px;
-    padding-top: 1.5rem;
+    padding-top: 1.25rem !important;
     padding-bottom: 2rem;
 }
 
@@ -129,15 +151,16 @@ html {
     color: #123C35;
     letter-spacing: 1px;
     white-space: nowrap;
+    padding-top: 4px;
 }
 
 .nav-container {
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-wrap: wrap;
     gap: 20px;
     padding-top: 12px;
-    white-space: nowrap;
 }
 
 .nav-container a {
@@ -191,31 +214,71 @@ html {
     margin-bottom: 25px;
 }
 
-.feature-card {
+.feature-card,
+.photo-card,
+.work-card {
     background: white;
     border-radius: 16px;
-    padding: 25px;
-    min-height: 165px;
+    padding: 14px;
     border: 1px solid #E1E9E2;
-    margin-bottom: 14px;
+    margin-bottom: 18px;
+    overflow: hidden;
 }
 
-.feature-card h3 {
+.feature-card {
+    min-height: 165px;
+    padding: 25px;
+}
+
+.feature-card h3,
+.work-card h3 {
     color: #123C35;
     font-family: 'Poppins', sans-serif;
-    font-size: 19px;
+    font-size: 18px;
 }
 
-.feature-card p {
+.feature-card p,
+.work-card p {
     color: #64766D;
     font-size: 14px;
     line-height: 1.7;
 }
 
-.step-number {
+.work-number {
     color: #248B65;
-    font-size: 27px;
+    font-size: 25px;
     font-weight: 800;
+    margin-top: 12px;
+}
+
+.gallery-heading {
+    text-align: center;
+    color: #123C35;
+    font-family: 'Poppins', sans-serif;
+    font-size: 30px;
+    font-weight: 800;
+    margin-top: 35px;
+    margin-bottom: 8px;
+}
+
+.gallery-subtitle {
+    text-align: center;
+    color: #64766D;
+    font-size: 16px;
+    margin-bottom: 25px;
+}
+
+.photo-title {
+    color: #123C35;
+    font-size: 18px;
+    font-weight: 700;
+    padding: 10px 4px 2px;
+}
+
+.photo-description {
+    color: #64766D;
+    font-size: 14px;
+    padding: 0 4px 8px;
 }
 
 .join-box {
@@ -251,25 +314,33 @@ div[data-testid="stSelectbox"] {
     min-width: 100px;
 }
 
-@media (max-width: 700px) {
-    .hero {
-        padding: 45px 18px;
-    }
-
+@media (max-width: 900px) {
     .brand {
         font-size: 25px;
+    }
+
+    .nav-container {
+        gap: 10px;
+        justify-content: flex-start;
+    }
+
+    .nav-container a {
+        font-size: 12px;
+    }
+
+    .hero {
+        padding: 45px 18px;
     }
 
     .section-title {
         font-size: 25px;
     }
 }
-
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# PROFESSIONAL HEADER & NAVIGATION
+# HEADER AND NAVIGATION
 # ==========================================
 
 col_brand, col_nav, col_language = st.columns([2, 4, 1.3])
@@ -303,12 +374,6 @@ st.session_state.language = selected_language
 data = CONTENT[selected_language]
 
 # ==========================================
-# NAVIGATION LABELS
-# ==========================================
-
-nav_home, nav_about, nav_how, nav_features, nav_community = data["nav"]
-
-# ==========================================
 # HERO SECTION
 # ==========================================
 
@@ -322,44 +387,61 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# col1, col2, col3 = st.columns([1, 1, 2])
+# ==========================================
+# MAIN ACTION BUTTONS
+# ==========================================
 
-col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     if st.button(data["report"], use_container_width=True):
         st.session_state.show_report = True
+        st.session_state.show_explore = False
+        st.session_state.show_dashboard = False
+        st.session_state.show_admin_panel = False
 
 with col2:
     if st.button(data["explore"], use_container_width=True):
         st.session_state.show_explore = True
+        st.session_state.show_report = False
+        st.session_state.show_dashboard = False
+        st.session_state.show_admin_panel = False
 
 with col3:
     if st.button("📊 Citizen Dashboard", use_container_width=True):
         st.session_state.show_dashboard = True
+        st.session_state.show_report = False
+        st.session_state.show_explore = False
         st.session_state.show_admin_panel = False
+
 with col4:
     if st.button("🔐 Admin Panel", use_container_width=True):
         st.session_state.show_admin_panel = True
-        st.session_state.show_dashboard = False
         st.session_state.show_report = False
-        st.session_state.show_explore = False        
+        st.session_state.show_explore = False
+        st.session_state.show_dashboard = False
 
-if st.session_state.get("show_report", False):
+# ==========================================
+# SELECTED MODULES
+# ==========================================
+
+if st.session_state.show_report:
     st.markdown("---")
     render_reporting_form(selected_language)
 
-if st.session_state.get("show_explore", False):
+if st.session_state.show_explore:
     st.success(data["solution_desc"])
 
-if st.session_state.get("show_dashboard", False):
+if st.session_state.show_dashboard:
     st.markdown("---")
     render_dashboard(selected_language)
-if st.session_state.get("show_admin_panel", False):
+
+if st.session_state.show_admin_panel:
     st.markdown("---")
-    render_admin_panel()   
+    render_admin_panel()
+
 # ==========================================
-# ABOUT / PROBLEM SECTION
+# ABOUT SECTION
 # ==========================================
 
 st.markdown('<div id="about"></div>', unsafe_allow_html=True)
@@ -374,6 +456,18 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# ==========================================
+# CENTERED BIN2CHAIN CIVIC SOLUTIONS BANNER
+# ==========================================
+
+left_space, banner_col, right_space = st.columns([1, 3, 1])
+
+with banner_col:
+    st.image(
+        "assets/bin2chain_civic_solutions.png",
+        use_container_width=True
+    )
+
 st.markdown(
     f'<div class="section-title">{data["solution_title"]}</div>',
     unsafe_allow_html=True
@@ -384,8 +478,90 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+
+
 # ==========================================
-# HOW Bin2Chain WORKS
+# BIN2CHAIN - FINAL CIVIC IMPACT GALLERY
+# ==========================================
+
+st.markdown("""
+<style>
+div[data-testid="stImage"] img {
+    width: 100% !important;
+    height: 220px !important;
+    object-fit: cover !important;
+    border-radius: 12px !important;
+}
+
+div[data-testid="stVerticalBlockBorderWrapper"] {
+    border-radius: 16px;
+}
+
+.impact-heading {
+    color: #123C35;
+    font-family: 'Poppins', sans-serif;
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 10px;
+}
+
+.impact-description {
+    color: #64766D;
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 48px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+impact_cards = [
+    {
+        "image": "https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=900",
+        "en_title": "Cleaner Streets",
+        "hi_title": "स्वच्छ सड़कें",
+        "en_desc": "Better waste management and clean public spaces.",
+        "hi_desc": "बेहतर कचरा प्रबंधन और स्वच्छ सार्वजनिक स्थान।"
+    },
+    {
+        "image": "https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=900",
+        "en_title": "Safer Roads",
+        "hi_title": "सुरक्षित सड़कें",
+        "en_desc": "Improved roads, safer footpaths and infrastructure.",
+        "hi_desc": "बेहतर सड़कें, सुरक्षित फुटपाथ और बुनियादी सुविधाएं।"
+    },
+    {
+        "image": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=900",
+        "en_title": "Greener Cities",
+        "hi_title": "हरित शहर",
+        "en_desc": "More trees and healthier neighbourhoods.",
+        "hi_desc": "अधिक पेड़ और स्वस्थ हरे-भरे मोहल्ले।"
+    }
+]
+
+columns = st.columns(3, gap="medium")
+
+for column, card in zip(columns, impact_cards):
+    with column:
+        with st.container(border=True):
+            st.image(card["image"], use_container_width=True)
+
+            title = card["en_title"] if selected_language == "English" else card["hi_title"]
+            description = card["en_desc"] if selected_language == "English" else card["hi_desc"]
+
+            st.markdown(
+                f'<div class="impact-heading">{title}</div>',
+                unsafe_allow_html=True
+            )
+
+            st.markdown(
+                f'<div class="impact-description">{description}</div>',
+                unsafe_allow_html=True
+            )
+
+
+
+# ==========================================
+# HOW BIN2CHAIN WORKS - PHOTO CARDS
 # ==========================================
 
 st.markdown('<div id="how-it-works"></div>', unsafe_allow_html=True)
@@ -395,45 +571,49 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+step_images = [
+    "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800",
+    "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800",
+    "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800",
+    "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800"
+]
+
 step_columns = st.columns(4)
 
-for col, step in zip(step_columns, data["steps"]):
+for index, (col, step) in enumerate(zip(step_columns, data["steps"])):
     with col:
+        st.markdown('<div class="work-card">', unsafe_allow_html=True)
+
+        st.image(
+            step_images[index],
+            use_container_width=True
+        )
+
         st.markdown(f"""
-        <div class="feature-card">
-            <div class="step-number">{step[0]}</div>
+            <div class="work-number">{step[0]}</div>
             <h3>{step[1]}</h3>
             <p>{step[2]}</p>
-        </div>
         """, unsafe_allow_html=True)
 
-# ==========================================
-# FEATURES
-# ==========================================
+        st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div id="features"></div>', unsafe_allow_html=True)
+feature_images = [
+    # AI Civic Vision
+    "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=900",
 
-st.markdown(
-    f'<div class="section-title">{data["features_title"]}</div>',
-    unsafe_allow_html=True
-)
+    # Smart Location - Map and GPS
+    "https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=900",
 
-for start in range(0, len(data["features"]), 2):
-    columns = st.columns(2)
+    # Community Intelligence
+    "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=900",
 
-    for j, col in enumerate(columns):
-        index = start + j
+    # Citizen Rewards
+    "https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=900",
 
-        if index < len(data["features"]):
-            icon, title, description = data["features"][index]
+    # Civic Impact
+    "https://images.unsplash.com/photo-1518005020951-eccb494ad742?w=900"
+]
 
-            with col:
-                st.markdown(f"""
-                <div class="feature-card">
-                    <h3>{icon} {title}</h3>
-                    <p>{description}</p>
-                </div>
-                """, unsafe_allow_html=True)
 
 # ==========================================
 # COMMUNITY
